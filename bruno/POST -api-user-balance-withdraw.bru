@@ -1,0 +1,26 @@
+meta {
+  name: POST /api/user/balance/withdraw
+  type: http
+  seq: 5
+}
+
+post {
+  url: http://localhost:8080/api/user/balance/withdraw
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMSwidXNlcl9sb2dpbiI6InRlc3QxMSIsImlzcyI6ImdvcGhlcm1hcnQtc2VydmljZSIsInN1YiI6InRlc3QxMSIsImV4cCI6MTc1Nzg4MDEzOSwibmJmIjoxNzU3NzkzNzM5LCJpYXQiOjE3NTc3OTM3Mzl9.PdZU2RiAGfrQFPwNdU0OdCvaH5JCPqe-Y3nPFlygW7o
+}
+
+body:json {
+  {
+      "order": "2377225624",
+      "sum": 751
+  } 
+}
+
+settings {
+  encodeUrl: true
+}

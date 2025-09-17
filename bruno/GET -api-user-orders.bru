@@ -1,0 +1,23 @@
+meta {
+  name: GET /api/user/orders
+  type: http
+  seq: 3
+}
+
+get {
+  url: http://localhost:8080/api/user/orders?limit=10
+  body: none
+  auth: bearer
+}
+
+params:query {
+  limit: 10
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMSwidXNlcl9sb2dpbiI6InRlc3QxMSIsImlzcyI6ImdvcGhlcm1hcnQtc2VydmljZSIsInN1YiI6InRlc3QxMSIsImV4cCI6MTc1Nzg4MDEzOSwibmJmIjoxNzU3NzkzNzM5LCJpYXQiOjE3NTc3OTM3Mzl9.PdZU2RiAGfrQFPwNdU0OdCvaH5JCPqe-Y3nPFlygW7o
+}
+
+settings {
+  encodeUrl: true
+}

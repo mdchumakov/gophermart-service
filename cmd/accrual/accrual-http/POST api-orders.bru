@@ -1,0 +1,27 @@
+meta {
+  name: POST api/orders
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:8080/api/orders
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+      "order": "9278923470",
+      "goods": [
+          {
+              "description": "Чайник Bork",
+              "price": 7000
+          }
+      ]
+  } 
+}
+
+settings {
+  encodeUrl: true
+}

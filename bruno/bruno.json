@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "gophermart-http",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

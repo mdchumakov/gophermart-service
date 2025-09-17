@@ -1,0 +1,23 @@
+meta {
+  name: POST /api/user/orders
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:8080/api/user/orders
+  body: text
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMSwidXNlcl9sb2dpbiI6InRlc3QxMSIsImlzcyI6ImdvcGhlcm1hcnQtc2VydmljZSIsInN1YiI6InRlc3QxMSIsImV4cCI6MTc1Nzg4MDEzOSwibmJmIjoxNzU3NzkzNzM5LCJpYXQiOjE3NTc3OTM3Mzl9.PdZU2RiAGfrQFPwNdU0OdCvaH5JCPqe-Y3nPFlygW7o
+}
+
+body:text {
+  9876543210987
+}
+
+settings {
+  encodeUrl: true
+}
