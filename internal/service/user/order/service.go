@@ -55,12 +55,12 @@ type addNewOrderRequest struct {
 	logger      config.LoggerInterface
 }
 
-func (s *Service) LoadNewOrderNumber(ctx context.Context, userId int, orderNumber string) error {
+func (s *Service) LoadNewOrderNumber(ctx context.Context, userID int, orderNumber string) error {
 	requestID := base.GetRequestID(ctx)
 
 	s.logger.Infow("Load new order number initiated",
 		"requestID", requestID,
-		"userID", userId,
+		"userID", userID,
 		"orderNumber", orderNumber)
 
 	if err := s.ValidateOrderNumber(ctx, orderNumber); err != nil {
@@ -70,26 +70,26 @@ func (s *Service) LoadNewOrderNumber(ctx context.Context, userId int, orderNumbe
 		return err
 	}
 
-	isUsersOrderAlreadyExists, err := s.repo.CheckUsersOrderExists(ctx, userId, orderNumber)
+	isUsersOrderAlreadyExists, err := s.repo.CheckUsersOrderExists(ctx, userID, orderNumber)
 	if err != nil {
 		return err
 	}
 	if isUsersOrderAlreadyExists {
 		s.logger.Warnw("Order number already exists for this user",
 			"requestID", requestID,
-			"userID", userId,
+			"userID", userID,
 			"orderNumber", orderNumber)
 		return ErrOrderAlreadyExistsForUser
 	}
 
-	isOrderAlreadyProcessed, err := s.repo.CheckOrderAlreadyProcessed(ctx, userId, orderNumber)
+	isOrderAlreadyProcessed, err := s.repo.CheckOrderAlreadyProcessed(ctx, userID, orderNumber)
 	if err != nil {
 		return err
 	}
 	if isOrderAlreadyProcessed {
 		s.logger.Warnw("Order number already processed by another user",
 			"requestID", requestID,
-			"userID", userId,
+			"userID", userID,
 			"orderNumber", orderNumber)
 		return ErrOrderAlreadyProcessed
 	}
@@ -98,17 +98,17 @@ func (s *Service) LoadNewOrderNumber(ctx context.Context, userId int, orderNumbe
 	case s.addChan <- addNewOrderRequest{
 		logger:      s.logger,
 		requestID:   requestID,
-		UserID:      userId,
+		UserID:      userID,
 		OrderNumber: orderNumber,
 	}:
 		s.logger.Debugw("Order addition request sent to worker",
 			"requestID", requestID,
-			"userID", userId,
+			"userID", userID,
 			"orderNumber", orderNumber)
 	default:
 		s.logger.Warnw("Add order channel is full, processing synchronously",
 			"requestID", requestID,
-			"userID", userId,
+			"userID", userID,
 			"orderNumber", orderNumber,
 		)
 		return ErrTooManyOrders
@@ -129,15 +129,15 @@ func (s *Service) ValidateOrderNumber(ctx context.Context, orderNumber string) e
 	return ErrBadOrderNumber
 }
 
-func (s *Service) GetUserOrders(ctx context.Context, userId int, limit, offset int) ([]*orderDTO, error) {
+func (s *Service) GetUserOrders(ctx context.Context, userID int, limit, offset int) ([]*orderDTO, error) {
 	requestID := base.GetRequestID(ctx)
 
 	s.logger.Infow("Get user orders request",
 		"requestID", requestID,
-		"userID", userId,
+		"userID", userID,
 	)
 
-	orders, err := s.repo.GetUserOrders(ctx, userId, limit, offset)
+	orders, err := s.repo.GetUserOrders(ctx, userID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (s *Service) GetUserOrders(ctx context.Context, userId int, limit, offset i
 	if len(orders) == 0 {
 		s.logger.Infow("No orders found for user",
 			"requestID", requestID,
-			"userID", userId,
+			"userID", userID,
 		)
 		return nil, ErrNoOrders
 	}
@@ -162,7 +162,7 @@ func (s *Service) GetUserOrders(ctx context.Context, userId int, limit, offset i
 
 	s.logger.Infow("User orders retrieved successfully",
 		"requestID", requestID,
-		"userID", userId,
+		"userID", userID,
 		"orders_count", len(result),
 	)
 

@@ -6,6 +6,6 @@ import (
 )
 
 type ServiceInterface interface {
-	MakeNewWithdraw(ctx context.Context, userId int, orderNumber string, sum float32) error
-	GetUserWithdrawals(ctx context.Context, userId int) ([]withdrawRepo.Withdrawal, error)
+	MakeNewWithdraw(ctx context.Context, userID int, orderNumber string, sum float32) error
+	GetUserWithdrawals(ctx context.Context, userID int) ([]withdrawRepo.Withdrawal, error)
 }

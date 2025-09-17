@@ -9,7 +9,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const requestIDKey = "requestID"
+type requestIDKeyType string
+
+const requestIDKey requestIDKeyType = "requestID"
 
 func SetRequestID(ctx context.Context, requestID string) context.Context {
 	return context.WithValue(ctx, requestIDKey, requestID)

@@ -39,12 +39,7 @@ func (c *HTTPClient) GetOrderInfo(ctx context.Context, orderNumber string) (*Ord
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			return
-		}
-	}(resp.Body)
+	defer resp.Body.Close()
 
 	switch resp.StatusCode {
 	case http.StatusOK:

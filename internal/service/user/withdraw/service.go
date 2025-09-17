@@ -30,19 +30,19 @@ type Service struct {
 	withdrawRepo withdrawRepo.RepositoryInterface
 }
 
-func (s *Service) MakeNewWithdraw(ctx context.Context, userId int, orderNumber string, sum float32) error {
+func (s *Service) MakeNewWithdraw(ctx context.Context, userID int, orderNumber string, sum float32) error {
 	requestID := base.GetRequestID(ctx)
 
 	s.logger.Infow("Load new order number initiated",
 		"requestID", requestID,
-		"userID", userId,
+		"userID", userID,
 		"orderNumber", orderNumber)
 
-	_, isOrderWasCreated, err := s.ordersRepo.GetOrCreateOrder(ctx, userId, orderNumber)
+	_, isOrderWasCreated, err := s.ordersRepo.GetOrCreateOrder(ctx, userID, orderNumber)
 	if err != nil {
 		s.logger.Errorw("Make new withdraw failed",
 			"requestID", requestID,
-			"userID", userId,
+			"userID", userID,
 			"orderNumber", orderNumber,
 			"error", err,
 		)
@@ -52,7 +52,7 @@ func (s *Service) MakeNewWithdraw(ctx context.Context, userId int, orderNumber s
 		s.logger.Infow("Order is already created")
 	}
 
-	currentBalance, err := s.viewsRepo.GetUserBalance(ctx, userId)
+	currentBalance, err := s.viewsRepo.GetUserBalance(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -60,17 +60,17 @@ func (s *Service) MakeNewWithdraw(ctx context.Context, userId int, orderNumber s
 	if currentBalance.CurrentBalance < sum {
 		s.logger.Warnw("Make new withdraw failed: not enough balance",
 			"requestID", requestID,
-			"userID", userId,
+			"userID", userID,
 			"orderNumber", orderNumber,
 			"error", "not enough balance",
 		)
 		return ErrNotEnoughBalance
 	}
 
-	if err := s.withdrawRepo.AddNew(ctx, userId, orderNumber, sum); err != nil {
+	if err := s.withdrawRepo.AddNew(ctx, userID, orderNumber, sum); err != nil {
 		s.logger.Errorw("Make new withdraw failed",
 			"requestID", requestID,
-			"userID", userId,
+			"userID", userID,
 			"orderNumber", orderNumber,
 			"error", err,
 		)
@@ -80,18 +80,18 @@ func (s *Service) MakeNewWithdraw(ctx context.Context, userId int, orderNumber s
 	return nil
 }
 
-func (s *Service) GetUserWithdrawals(ctx context.Context, userId int) ([]withdrawRepo.Withdrawal, error) {
+func (s *Service) GetUserWithdrawals(ctx context.Context, userID int) ([]withdrawRepo.Withdrawal, error) {
 	requestID := base.GetRequestID(ctx)
 
 	s.logger.Infow("Get user withdrawals initiated",
 		"requestID", requestID,
-		"userID", userId)
+		"userID", userID)
 
-	withdrawals, err := s.withdrawRepo.GetUserWithdrawals(ctx, userId)
+	withdrawals, err := s.withdrawRepo.GetUserWithdrawals(ctx, userID)
 	if err != nil {
 		s.logger.Errorw("Get user withdrawals failed",
 			"requestID", requestID,
-			"userID", userId,
+			"userID", userID,
 			"error", err,
 		)
 		return nil, err
@@ -99,7 +99,7 @@ func (s *Service) GetUserWithdrawals(ctx context.Context, userId int) ([]withdra
 
 	s.logger.Infow("Get user withdrawals completed",
 		"requestID", requestID,
-		"userID", userId,
+		"userID", userID,
 		"withdrawalsCount", len(withdrawals))
 
 	return withdrawals, nil

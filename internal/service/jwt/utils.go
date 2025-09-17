@@ -2,7 +2,9 @@ package jwt
 
 import "context"
 
-const TokenContextKey = "jwtToken"
+type tokenContextKeyType string
+
+const TokenContextKey tokenContextKeyType = "jwtToken"
 
 func SetUserInContext(ctx context.Context, user *InDTO) context.Context {
 	return context.WithValue(ctx, TokenContextKey, user)

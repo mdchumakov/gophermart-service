@@ -3,7 +3,7 @@ package withdraw
 import "time"
 
 type NewWithdraw struct {
-	UserId      string  `json:"user_id"`
+	UserID      string  `json:"user_id"`
 	OrderNumber string  `json:"order_number"`
 	Sum         float32 `json:"sum"`
 }
