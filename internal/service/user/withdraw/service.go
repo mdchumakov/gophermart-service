@@ -2,6 +2,7 @@ package withdraw
 
 import (
 	"context"
+	"errors"
 	"gophermart-service/internal/base"
 	"gophermart-service/internal/config"
 	ordersRepo "gophermart-service/internal/repository/orders"
@@ -38,9 +39,10 @@ func (s *Service) MakeNewWithdraw(ctx context.Context, userID int, orderNumber s
 		"userID", userID,
 		"orderNumber", orderNumber)
 
+	// Сначала создаем заказ (если его нет)
 	_, isOrderWasCreated, err := s.ordersRepo.GetOrCreateOrder(ctx, userID, orderNumber)
 	if err != nil {
-		s.logger.Errorw("Make new withdraw failed",
+		s.logger.Errorw("Make new withdraw failed - order creation",
 			"requestID", requestID,
 			"userID", userID,
 			"orderNumber", orderNumber,
@@ -52,22 +54,19 @@ func (s *Service) MakeNewWithdraw(ctx context.Context, userID int, orderNumber s
 		s.logger.Infow("Order is already created")
 	}
 
-	currentBalance, err := s.viewsRepo.GetUserBalance(ctx, userID)
-	if err != nil {
-		return err
-	}
+	// Атомарно проверяем баланс и добавляем списание в транзакции
+	if err := s.withdrawRepo.AddNewWithBalanceCheck(ctx, userID, orderNumber, sum); err != nil {
+		// Проверяем тип ошибки для корректной обработки
+		if errors.Is(err, withdrawRepo.ErrInsufficientBalance) {
+			s.logger.Warnw("Make new withdraw failed: not enough balance",
+				"requestID", requestID,
+				"userID", userID,
+				"orderNumber", orderNumber,
+				"error", "not enough balance",
+			)
+			return ErrNotEnoughBalance
+		}
 
-	if currentBalance.CurrentBalance < sum {
-		s.logger.Warnw("Make new withdraw failed: not enough balance",
-			"requestID", requestID,
-			"userID", userID,
-			"orderNumber", orderNumber,
-			"error", "not enough balance",
-		)
-		return ErrNotEnoughBalance
-	}
-
-	if err := s.withdrawRepo.AddNew(ctx, userID, orderNumber, sum); err != nil {
 		s.logger.Errorw("Make new withdraw failed",
 			"requestID", requestID,
 			"userID", userID,

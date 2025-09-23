@@ -18,23 +18,26 @@ type EnvironmentSettings struct {
 	JWT         *JWTSettings
 }
 
-func NewSettings() *Settings {
-	envSettings := NewEnvironmentSettings()
+func NewSettings() (*Settings, error) {
+	envSettings, err := NewEnvironmentSettings()
+	if err != nil {
+		return nil, err
+	}
 	flags := NewFlags()
 
 	return &Settings{
 		Environment: envSettings,
 		Flags:       flags,
-	}
+	}, nil
 }
 
-func NewEnvironmentSettings() *EnvironmentSettings {
+func NewEnvironmentSettings() (*EnvironmentSettings, error) {
 	var settings EnvironmentSettings
 	if err := envconfig.Process("", &settings); err != nil {
-		panic("Failed to load settings: " + err.Error())
+		return nil, err
 	}
 
-	return &settings
+	return &settings, nil
 }
 
 func (s *Settings) GetServerAddress() string {

@@ -21,18 +21,24 @@ type HTTPApp struct {
 	handlers *handler.Handlers
 }
 
-func NewHTTPApp(logger config.LoggerInterface) *HTTPApp {
+func NewHTTPApp(logger config.LoggerInterface) (*HTTPApp, error) {
 	ctx := context.Background()
 
 	router := gin.Default()
-	settings := config.NewSettings()
+	settings, err := config.NewSettings()
+	if err != nil {
+		return nil, err
+	}
 
-	pool := config.SetupDB(
+	pool, err := config.SetupDB(
 		ctx,
 		logger,
 		settings.GetDatabaseURI(),
 		settings.Environment.Database.MigrationsPath,
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	repos := repository.NewRepositories(logger, pool)
 	integrations := integration.NewIntegrations(logger, settings)
@@ -45,7 +51,7 @@ func NewHTTPApp(logger config.LoggerInterface) *HTTPApp {
 		settings: settings,
 		services: services,
 		handlers: handlers,
-	}
+	}, nil
 }
 
 func (a *HTTPApp) SetupCommonMiddleware() {

@@ -2,18 +2,20 @@ package order
 
 import (
 	"context"
+	"errors"
 	"gophermart-service/internal/base"
 	"gophermart-service/internal/config"
 	"gophermart-service/internal/integration/accrual"
 	ordersRepo "gophermart-service/internal/repository/orders"
 	"strconv"
 	"strings"
-	"sync"
+	"time"
 )
 
 const (
 	maxWorkers         = 3
-	maxChannelPoolSize = 100
+	batchSize          = 10
+	processingInterval = 5 * time.Second
 )
 
 func NewOrderService(
@@ -25,15 +27,14 @@ func NewOrderService(
 	service := &Service{
 		logger:        logger,
 		repo:          repo,
-		waitGroup:     &sync.WaitGroup{},
 		accrualClient: accrualClient,
-		addChan:       make(chan addNewOrderRequest, maxChannelPoolSize),
 		stopChan:      make(chan struct{}),
+		rateLimitChan: make(chan time.Duration, 1), // буферизованный канал для rate limiting
 	}
 
+	// Запускаем воркеры для батчевой обработки заказов
 	for workerID := 1; workerID <= maxWorkers; workerID++ {
-		service.waitGroup.Add(1)
-		go service.addNewOrderWorker(workerID)
+		go service.batchOrderProcessor(workerID)
 	}
 
 	return service
@@ -43,16 +44,8 @@ type Service struct {
 	logger        config.LoggerInterface
 	repo          ordersRepo.RepositoryInterface
 	accrualClient accrual.ClientInterface
-	waitGroup     *sync.WaitGroup
-	addChan       chan addNewOrderRequest
 	stopChan      chan struct{}
-}
-
-type addNewOrderRequest struct {
-	UserID      int
-	OrderNumber string
-	requestID   string
-	logger      config.LoggerInterface
+	rateLimitChan chan time.Duration // канал для передачи времени ожидания при rate limiting
 }
 
 func (s *Service) LoadNewOrderNumber(ctx context.Context, userID int, orderNumber string) error {
@@ -70,49 +63,44 @@ func (s *Service) LoadNewOrderNumber(ctx context.Context, userID int, orderNumbe
 		return err
 	}
 
-	isUsersOrderAlreadyExists, err := s.repo.CheckUsersOrderExists(ctx, userID, orderNumber)
+	// Атомарно добавляем заказ в БД с проверкой уникальности в транзакции
+	orderID, err := s.repo.AddNewOrderWithCheck(ctx, userID, orderNumber)
 	if err != nil {
-		return err
-	}
-	if isUsersOrderAlreadyExists {
-		s.logger.Warnw("Order number already exists for this user",
-			"requestID", requestID,
-			"userID", userID,
-			"orderNumber", orderNumber)
-		return ErrOrderAlreadyExistsForUser
-	}
+		if errors.Is(err, ordersRepo.ErrOrderAlreadyExistsForUserRepo) {
+			s.logger.Warnw("Order number already exists for this user",
+				"requestID", requestID,
+				"userID", userID,
+				"orderNumber", orderNumber)
+			return ErrOrderAlreadyExistsForUser
+		}
+		if errors.Is(err, ordersRepo.ErrOrderAlreadyProcessedRepo) {
+			s.logger.Warnw("Order number already processed by another user",
+				"requestID", requestID,
+				"userID", userID,
+				"orderNumber", orderNumber)
+			return ErrOrderAlreadyProcessed
+		}
 
-	isOrderAlreadyProcessed, err := s.repo.CheckOrderAlreadyProcessed(ctx, userID, orderNumber)
-	if err != nil {
-		return err
-	}
-	if isOrderAlreadyProcessed {
-		s.logger.Warnw("Order number already processed by another user",
-			"requestID", requestID,
-			"userID", userID,
-			"orderNumber", orderNumber)
-		return ErrOrderAlreadyProcessed
-	}
-
-	select {
-	case s.addChan <- addNewOrderRequest{
-		logger:      s.logger,
-		requestID:   requestID,
-		UserID:      userID,
-		OrderNumber: orderNumber,
-	}:
-		s.logger.Debugw("Order addition request sent to worker",
-			"requestID", requestID,
-			"userID", userID,
-			"orderNumber", orderNumber)
-	default:
-		s.logger.Warnw("Add order channel is full, processing synchronously",
+		s.logger.Errorw("Failed to add new order",
 			"requestID", requestID,
 			"userID", userID,
 			"orderNumber", orderNumber,
-		)
-		return ErrTooManyOrders
+			"error", err.Error())
+		return ErrFailedToAddOrder
 	}
+	if orderID == 0 {
+		s.logger.Errorw("Failed to add new order - zero order ID",
+			"requestID", requestID,
+			"userID", userID,
+			"orderNumber", orderNumber)
+		return ErrFailedToAddOrder
+	}
+
+	s.logger.Infow("Order added to database successfully",
+		"requestID", requestID,
+		"userID", userID,
+		"orderNumber", orderNumber,
+		"orderID", orderID)
 
 	return nil
 }
@@ -203,86 +191,198 @@ func (s *Service) luhnCheck(number string) bool {
 	return sum%10 == 0
 }
 
-func (s *Service) addNewOrderWorker(workerID int) {
-	defer s.waitGroup.Done()
+func (s *Service) batchOrderProcessor(workerID int) {
+	s.logger.Infow("Batch order processor started", "worker_id", workerID)
+	defer s.logger.Infow("Batch order processor stopped", "worker_id", workerID)
+
+	ticker := time.NewTicker(processingInterval)
+	defer ticker.Stop()
 
 	for {
 		select {
-		case req := <-s.addChan:
-			ctx := context.Background()
+		case <-ticker.C:
+			s.processBatchOrders(workerID)
 
-			req.logger.Debugw("Worker started processing delete request",
+		case retryAfter := <-s.rateLimitChan:
+			s.logger.Warnw("Rate limit detected, sleeping all workers",
 				"worker_id", workerID,
-				"request_id", req.requestID,
-				"order_number", req.OrderNumber,
-				"user_id", req.UserID,
-			)
-
-			orderID, err := s.repo.AddNewOrder(ctx, req.UserID, req.OrderNumber)
-			if err != nil {
-				s.logger.Errorw("Failed to add new order",
-					"requestID", req.requestID,
-					"userID", req.UserID,
-					"orderNumber", req.OrderNumber,
-					"error", err.Error())
-			}
-			if orderID == 0 {
-				s.logger.Errorw("Failed to add new order",
-					"requestID", req.requestID,
-					"userID", req.UserID,
-					"orderNumber", req.OrderNumber,
-				)
-			}
-
-			orderInfo, err := s.accrualClient.GetOrderInfo(ctx, req.OrderNumber)
-			if err != nil {
-				s.logger.Errorw("Failed to get order info",
-					"err", err.Error(),
-					"worker_id", workerID,
-					"request_id", req.requestID,
-					"order_number", req.OrderNumber,
-					"user_id", req.UserID,
-				)
-				return
-			}
-			if orderInfo == nil {
-				s.logger.Warnw("Failed to get order info",
-					"worker_id", workerID,
-					"request_id", req.requestID,
-					"order_number", req.OrderNumber,
-					"user_id", req.UserID,
-				)
-				return
-			}
-
-			if err = s.repo.UpdateOrder(
-				ctx,
-				req.UserID,
-				req.OrderNumber,
-				string(orderInfo.Status),
-				orderInfo.GetAccrual(),
-			); err != nil {
-				s.logger.Errorw("Failed to update order",
-					"err", err.Error(),
-					"worker_id", workerID,
-					"request_id", req.requestID,
-					"order_number", req.OrderNumber,
-					"user_id", req.UserID,
-				)
-				return
-			}
-
-			req.logger.Debugw("Worker finished processing delete request",
-				"worker_id", workerID,
-				"request_id", req.requestID,
-				"order_number", req.OrderNumber,
-				"user_id", req.UserID,
-			)
+				"retry_after", retryAfter)
+			s.sleepWithGracefulShutdown(workerID, retryAfter)
 
 		case <-s.stopChan:
+			s.logger.Infow("Batch order processor received stop signal", "worker_id", workerID)
 			return
 		}
 	}
 }
 
-func (s *Service) Stop() {}
+func (s *Service) processBatchOrders(workerID int) {
+	ctx := context.Background()
+
+	// Получаем заказы со статусом NEW
+	orders, err := s.repo.GetOrdersByStatus(ctx, "NEW", batchSize)
+	if err != nil {
+		s.logger.Errorw("Failed to get orders by status",
+			"worker_id", workerID,
+			"status", "NEW",
+			"error", err.Error())
+		return
+	}
+
+	if len(orders) == 0 {
+		s.logger.Debugw("No NEW orders to process", "worker_id", workerID)
+		return
+	}
+
+	s.logger.Infow("Processing batch of orders",
+		"worker_id", workerID,
+		"orders_count", len(orders))
+
+	for _, order := range orders {
+		s.processOrder(workerID, order)
+	}
+}
+
+func (s *Service) sleepWithGracefulShutdown(workerID int, duration time.Duration) {
+	s.logger.Infow("Worker sleeping due to rate limit",
+		"worker_id", workerID,
+		"duration", duration)
+
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		s.logger.Infow("Worker woke up from rate limit sleep",
+			"worker_id", workerID)
+		// Продолжаем работу
+
+	case <-s.stopChan:
+		s.logger.Infow("Worker received stop signal during rate limit sleep",
+			"worker_id", workerID)
+		return
+	}
+}
+
+func (s *Service) processOrder(workerID int, order *ordersRepo.Order) {
+	ctx := context.Background()
+
+	s.logger.Debugw("Processing order",
+		"worker_id", workerID,
+		"order_id", order.ID,
+		"order_number", order.OrderNumber,
+		"user_id", order.UserID)
+
+	// Обновляем статус на PROCESSING
+	if err := s.repo.UpdateOrderStatus(ctx, order.ID, "PROCESSING"); err != nil {
+		s.logger.Errorw("Failed to update order status to PROCESSING",
+			"worker_id", workerID,
+			"order_id", order.ID,
+			"order_number", order.OrderNumber,
+			"error", err.Error())
+		return
+	}
+
+	// Получаем информацию о заказе из системы accrual
+	orderInfo, err := s.accrualClient.GetOrderInfo(ctx, order.OrderNumber)
+	if err != nil {
+		// Проверяем, является ли это ошибкой rate limiting
+		if accrual.IsRateLimitError(err) {
+			var rateLimitErr *accrual.RateLimitError
+			if errors.As(err, &rateLimitErr) {
+				s.logger.Warnw("Rate limit exceeded, signaling all workers to sleep",
+					"worker_id", workerID,
+					"order_id", order.ID,
+					"order_number", order.OrderNumber,
+					"retry_after", rateLimitErr.RetryAfter)
+
+				// Отправляем сигнал rate limiting всем воркерам (неблокирующе)
+				select {
+				case s.rateLimitChan <- rateLimitErr.RetryAfter:
+				default:
+				}
+
+				// Возвращаем статус обратно на NEW для повторной обработки
+				if updateErr := s.repo.UpdateOrderStatus(ctx, order.ID, "NEW"); updateErr != nil {
+					s.logger.Errorw("Failed to revert order status to NEW",
+						"worker_id", workerID,
+						"order_id", order.ID,
+						"error", updateErr.Error())
+				}
+				return
+			}
+		}
+
+		s.logger.Errorw("Failed to get order info from accrual system",
+			"worker_id", workerID,
+			"order_id", order.ID,
+			"order_number", order.OrderNumber,
+			"error", err.Error())
+		// Возвращаем статус обратно на NEW для повторной обработки
+		if updateErr := s.repo.UpdateOrderStatus(ctx, order.ID, "NEW"); updateErr != nil {
+			s.logger.Errorw("Failed to revert order status to NEW",
+				"worker_id", workerID,
+				"order_id", order.ID,
+				"error", updateErr.Error())
+		}
+		return
+	}
+
+	if orderInfo == nil {
+		s.logger.Warnw("Order not found in accrual system",
+			"worker_id", workerID,
+			"order_id", order.ID,
+			"order_number", order.OrderNumber)
+		// Возвращаем статус обратно на NEW для повторной обработки
+		if updateErr := s.repo.UpdateOrderStatus(ctx, order.ID, "NEW"); updateErr != nil {
+			s.logger.Errorw("Failed to revert order status to NEW",
+				"worker_id", workerID,
+				"order_id", order.ID,
+				"error", updateErr.Error())
+		}
+		return
+	}
+
+	// Обновляем заказ с финальным статусом и начислением
+	if err = s.repo.UpdateOrder(
+		ctx,
+		order.UserID,
+		order.OrderNumber,
+		string(orderInfo.Status),
+		orderInfo.GetAccrual(),
+	); err != nil {
+		s.logger.Errorw("Failed to update order with final status",
+			"worker_id", workerID,
+			"order_id", order.ID,
+			"order_number", order.OrderNumber,
+			"error", err.Error())
+		// Возвращаем статус обратно на NEW для повторной обработки
+		if updateErr := s.repo.UpdateOrderStatus(ctx, order.ID, "NEW"); updateErr != nil {
+			s.logger.Errorw("Failed to revert order status to NEW",
+				"worker_id", workerID,
+				"order_id", order.ID,
+				"error", updateErr.Error())
+		}
+		return
+	}
+
+	s.logger.Infow("Order processed successfully",
+		"worker_id", workerID,
+		"order_id", order.ID,
+		"order_number", order.OrderNumber,
+		"user_id", order.UserID,
+		"status", string(orderInfo.Status),
+		"accrual", orderInfo.GetAccrual())
+}
+
+func (s *Service) Stop() {
+	s.logger.Info("Stopping order service...")
+
+	// Отправляем сигнал остановки всем воркерам
+	close(s.stopChan)
+
+	// Закрываем канал rate limiting
+	close(s.rateLimitChan)
+
+	s.logger.Info("Order service stopped")
+}

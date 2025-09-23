@@ -7,7 +7,6 @@ var (
 	ErrOrderAlreadyProcessed     = errors.New("order already processed")
 	ErrFailedToAddOrder          = errors.New("failed to add order")
 	ErrBadOrderNumber            = errors.New("bad order number")
-	ErrTooManyOrders             = errors.New("too many orders")
 	ErrNoOrders                  = errors.New("no orders found")
 )
 

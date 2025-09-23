@@ -21,21 +21,20 @@ type PGSettings struct {
 	MigrationsPath string `envconfig:"MIGRATIONS_PATH" default:"migrations"`
 }
 
-func SetupDB(ctx context.Context, logger LoggerInterface, pgDSN, migrationsPath string) *pgxpool.Pool {
+func SetupDB(ctx context.Context, logger LoggerInterface, pgDSN, migrationsPath string) (*pgxpool.Pool, error) {
 	pool, err := InitPostgresDB(ctx, pgDSN)
 	if err != nil {
-		logger.Fatal(err)
-		panic(err)
+		return nil, fmt.Errorf("failed to initialize postgres database: %w", err)
 	}
 	logger.Debug("connected to postgres database")
 
 	if err := RunMigrations(logger, pool, migrationsPath); err != nil {
-		logger.Fatal(err)
-		panic(err)
+		pool.Close()
+		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 	logger.Debug("migrations applied successfully")
 
-	return pool
+	return pool, nil
 }
 
 func InitPostgresDB(ctx context.Context, pgDSN string) (*pgxpool.Pool, error) {
@@ -56,7 +55,7 @@ func RunMigrations(logger LoggerInterface, pool *pgxpool.Pool, migrationsPath st
 	conn := stdlib.OpenDBFromPool(pool)
 	defer func(conn *sql.DB) {
 		if err := conn.Close(); err != nil {
-			panic("failed to close database connection: " + err.Error())
+			logger.Errorw("failed to close database connection", "error", err)
 		}
 	}(conn)
 	driver, err := postgres.WithInstance(conn, &postgres.Config{})
@@ -75,8 +74,7 @@ func RunMigrations(logger LoggerInterface, pool *pgxpool.Pool, migrationsPath st
 	defer func(m *migrate.Migrate) {
 		err, _ := m.Close()
 		if err != nil {
-			logger.Fatal("failed to close migrate instance")
-			panic("failed to close migrate instance: " + err.Error())
+			logger.Errorw("failed to close migrate instance", "error", err)
 		}
 	}(m)
 

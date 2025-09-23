@@ -9,6 +9,7 @@ type RepositoryInterface interface {
 
 type RepositoryWriterInterface interface {
 	AddNew(ctx context.Context, userID int, orderNumber string, sum float32) error
+	AddNewWithBalanceCheck(ctx context.Context, userID int, orderNumber string, sum float32) error
 }
 
 type RepositoryReaderInterface interface {
