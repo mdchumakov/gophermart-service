@@ -1,0 +1,20 @@
+meta {
+  name: GET -api-user-withdrawals
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/api/user/withdrawals
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{jwt_token}}
+}
+
+vars:pre-request {
+  base_url: http://localhost:8080
+  jwt_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3MzU5NzI4MDB9.example
+}

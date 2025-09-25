@@ -1,0 +1,22 @@
+meta {
+  name: POST /api/user/login
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:8080/api/user/login
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+      "login": "test11",
+      "password": "password"
+  } 
+}
+
+settings {
+  encodeUrl: true
+}

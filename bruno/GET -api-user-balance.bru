@@ -1,0 +1,19 @@
+meta {
+  name: GET /api/user/balance
+  type: http
+  seq: 4
+}
+
+get {
+  url: http://localhost:8080/api/user/balance
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxMSwidXNlcl9sb2dpbiI6InRlc3QxMSIsImlzcyI6ImdvcGhlcm1hcnQtc2VydmljZSIsInN1YiI6InRlc3QxMSIsImV4cCI6MTc1ODIxNzQ1NiwibmJmIjoxNzU4MTMxMDU2LCJpYXQiOjE3NTgxMzEwNTZ9.dArnJsYg6OPBCJugITpFmj8M7yFe2GMbzUo88q6Mrrw"
+}
+
+settings {
+  encodeUrl: true
+}
